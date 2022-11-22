@@ -172,7 +172,6 @@ Select the extraction mode for that {} 👀
     EXT_CAPTION = """
 `{}`
 
-Successfully extracted by @unzip_edm115bot 🥰
     """
 
     URL_UPLOAD = """
