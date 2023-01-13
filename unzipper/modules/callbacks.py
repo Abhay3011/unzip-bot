@@ -15,6 +15,7 @@ from pyrogram.types import CallbackQuery
 from config import Config
 from unzipper import LOGGER
 from unzipper.helpers.database import (
+    del_thumb_db,
     set_upload_mode,
     update_thumb,
     update_uploaded,
@@ -39,6 +40,7 @@ from .ext_script.ext_helper import (
 )
 from .ext_script.up_helper import answer_query, get_size, send_file, send_url_logs
 
+split_file_pattern = r"\.(?:[0-9]+|part[0-9]+\.rar|z[0-9]+)$"
 
 # Function to download files from direct link using aiohttp
 async def download(url, path):
@@ -93,6 +95,20 @@ async def unzipper_cb(unzip_bot: Client, query: CallbackQuery):
             reply_markup=Buttons.THUMB_FINAL,
         )
 
+    elif query.data == "check_before_del":
+        user_id = query.from_user.id
+        thumb_location = Config.THUMB_LOCATION + "/" + str(user_id) + ".jpg"
+        await unzip_bot.send_photo(chat_id=user_id,
+                                   photo=thumb_location,
+                                   caption="Your actual thumbnail")
+        await unzip_bot.delete_messages(chat_id=user_id,
+                                        message_ids=query.message.id)
+        await unzip_bot.send_message(
+            chat_id=user_id,
+            text=Messages.DEL_CONFIRM_THUMB_2,
+            reply_markup=Buttons.THUMB_DEL_2,
+        )
+
     elif query.data.startswith("save_thumb"):
         user_id = query.from_user.id
         replace = query.data.split("|")[1]
@@ -111,6 +127,19 @@ async def unzipper_cb(unzip_bot: Client, query: CallbackQuery):
         except:
             LOGGER.warning("Error on Telegra.ph upload")
         await answer_query(query, Messages.SAVED_THUMBNAIL)
+
+    elif query.data == "del_thumb":
+        user_id = query.from_user.id
+        thumb_location = Config.THUMB_LOCATION + "/" + str(user_id) + ".jpg"
+        try:
+            await del_thumb_db(id)
+        except Exception as e:
+            LOGGER.error(f"Error on thumb deletion in DB : {e}")
+        try:
+            os.remove(thumb_location + ".jpg")
+        except:
+            pass
+        await query.edit_message_text(text=Messages.DELETED_THUMB)
 
     elif query.data == "nope_thumb":
         user_id = query.from_user.id
@@ -140,6 +169,7 @@ async def unzipper_cb(unzip_bot: Client, query: CallbackQuery):
         ext_files_dir = f"{download_path}/extracted"
         r_message = query.message.reply_to_message
         splitted_data = query.data.split("|")
+        await query.message.edit("**✅ Processing your task… Please wait**")
         global log_msg
         log_msg = await unzip_bot.send_message(
             chat_id=Config.LOGS_CHANNEL,
@@ -222,14 +252,14 @@ async def unzipper_cb(unzip_bot: Client, query: CallbackQuery):
                 # fext = (pathlib.Path(fname).suffix).casefold()
                 if splitted_data[2] != "thumb":
                     fext = fname.split(".")[-1].casefold()
+                    if (fnmatch(fext, extentions_list["split"][0])
+                            or fext in extentions_list["split"] or bool(re.search(split_file_pattern, fname))):
+                        return await query.message.edit(
+                            "Splitted archives can't be processed yet")
                     if fext not in extentions_list["archive"]:
                         return await query.message.edit(
                             "This file is NOT an archive 😐\nIf you believe it's an error, send the file to **@EDM115**"
                         )
-                    if (fnmatch(fext, extentions_list["split"][0])
-                            or fext in extentions_list["split"]):
-                        return await query.message.edit(
-                            "Splitted archives can't be processed yet")
                 # Makes download dir
                 os.makedirs(download_path)
                 s_time = time()
@@ -245,9 +275,9 @@ async def unzipper_cb(unzip_bot: Client, query: CallbackQuery):
                 )
                 e_time = time()
             else:
-                await answer_query(
+                return await answer_query(
                     query,
-                    "Can't find details 💀 Please contact @EDM115 if it's an error",
+                    "Fatal query parsing error 💀 Please contact @EDM115 with details and screenshots",
                     answer_only=True,
                     unzip_client=unzip_bot,
                 )
